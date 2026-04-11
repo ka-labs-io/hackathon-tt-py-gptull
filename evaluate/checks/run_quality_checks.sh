@@ -49,6 +49,9 @@ run_check "Code block copying"          "$RULES_DIR/detect_code_block_copying.py
 run_check "Interface compliance"        "$RULES_DIR/detect_interface_violation.py"
 run_check "Wrapper modification"        "$RULES_DIR/detect_wrapper_modification.py"
 run_check "Evaluate folder unchanged"  "$RULES_DIR/detect_evaluate_modification.py"
+run_check "Template file bypass"       "$RULES_DIR/detect_pysrc_templates.py"
+run_check "Premade calculator"         "$RULES_DIR/detect_premade_calculator.py"
+run_check "String-literal smuggling"   "$RULES_DIR/detect_string_literal_smuggling.py"
 
 if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
   run_check "Explicit implementation LLM review" "$RULES_DIR/detect_explicit_implementation_llm.py"

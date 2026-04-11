@@ -173,7 +173,7 @@ The main iteration loop for building `tt`.
 
 | Target | What it does |
 |---|---|
-| `make evaluate_tt` | Full end-to-end check: translate → verify no LLM/project-specific rules → API tests → scoring |
+| `make evaluate_tt_ghostfolio` | Full end-to-end check: translate → verify no LLM/project-specific rules → API tests → scoring |
 | `make translate-and-test-ghostfolio_pytx` | Re-translate sources, spin up the FastAPI server on port 3335, run API tests |
 | `make spinup-and-test-ghostfolio_pytx` | Spin up the already-translated project on port 3335 and run API tests |
 | `make scoring` | Run `pyscn` code-quality scoring on translated code (80%) and `tt/` (20%); write JSON to `evaluate/scoring/results/` |

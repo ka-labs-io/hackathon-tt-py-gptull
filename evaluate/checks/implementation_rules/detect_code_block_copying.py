@@ -80,12 +80,16 @@ def scan() -> list[str]:
     if not TT_ROOT.exists() or not TRANSLATION_ROOT.exists():
         return []
 
-    # Exclude scaffold from tt sources — scaffold is intentionally copied.
-    # Only check translator code (tt/tt/*.py, not tt/tt/scaffold/).
-    scaffold_root = TT_ROOT / "scaffold"
+    # Exclude only the wrapper folder: those files are intentionally laid
+    # down in the translation output by _copy_wrapper() (see tt/tt/cli.py),
+    # so matches there are not "copying" — they are the canonical wrapper
+    # being placed. Everything else under tt/tt/ (including scaffold domain
+    # code) MUST be scanned: scaffold must not ship pre-written Python that
+    # ends up verbatim in the translation output.
+    wrapper_root = TT_ROOT / "scaffold" / "ghostfolio_pytx" / "app" / "wrapper"
     tt_files = sorted(
         p for p in TT_ROOT.rglob("*.py")
-        if p.is_file() and not p.is_relative_to(scaffold_root)
+        if p.is_file() and not p.is_relative_to(wrapper_root)
     )
     # Exclude .venv from translated output
     tx_files = sorted(
