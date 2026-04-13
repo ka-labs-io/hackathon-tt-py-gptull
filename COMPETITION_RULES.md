@@ -28,10 +28,12 @@ The TT will be judged on:
 
 1. **Rule compliance** — the translation tool must not break the rules above.
 2. **Correctness** — translated Python code passes the API tests of the reference projects, and how many of them.
-3. **Python code quality**, ranked by relevance:
-   1. Elegance & Readability
+3. Best engineering under constraints
+   * Very short time for assignment
+   * We expect a prototype, not perfect code
+4. **Python code quality**, ranked by relevance
+   1. Readability
    2. Maintainability
-   3. Test coverage
    4. Avoid Duplication (DRY)
    5. Some specific code quality metrics, meausre by tooling `make scoring_codequality`
       1. health_score (0-100) - Overall code health score with letter grade (A-F)
@@ -41,8 +43,8 @@ The TT will be judged on:
       5. coupling_score - Module coupling/dependencies between components
       6. dependency_score - External dependency quality
       7. architecture_score - Overall architecture quality
-4. **Understanding** — judges will evaluate how well competitors understand what their translator actually does. Automated scoring will be balanced with human evaluation of architectural choices, trade-offs, and the team's ability to explain their approach. A high test score from a tool the team cannot explain will be weighted down.
-5. **Completion time** - If several teams solve all or the same number of tests, the earliest team to solve them will be assigned an extra advantage in the judging.
+5. **Understanding** — judges will evaluate how well competitors understand what their translator actually does. Automated scoring will be balanced with human evaluation of architectural choices, trade-offs, and the team's ability to explain their approach. A high test score from a tool the team cannot explain will be weighted down.
+6. **Completion time** - If several teams solve all or the same number of tests, the earliest team to solve them will be assigned an extra advantage in the judging.
 
 We use tools like pyscn for scoring the quality. Scoring: `make evaluate_tt_ghostfolio` runs tests (50%) + code quality via pyscn (50%). Judge review adjusts the final score.
 
