@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, TypeAlias
 if TYPE_CHECKING:
     from tree_sitter import Node
 
-from tt.expressions import INDENT_UNIT, TransformContext, transform_expression
+from tt.expressions import INDENT_UNIT, TransformContext, _camel_to_snake, transform_expression
 
 __all__ = [
     "transform_statement",
@@ -40,7 +40,7 @@ def _children_by_type(node: Node, type_name: str) -> list[Node]:
 
 
 def _named_children(node: Node) -> list[Node]:
-    return [child for child in node.children if child.is_named]
+    return [child for child in node.children if child.is_named and child.type != "comment"]
 
 
 def _strip_parenthesized(node: Node) -> Node:
@@ -71,7 +71,8 @@ def _destructure_object_property(
 ) -> list[str]:
     if child.type == "shorthand_property_identifier_pattern":
         prop_name = _node_text(child)
-        return [f'{ctx.indent}{prop_name} = {source_expr}["{prop_name}"]']
+        snake_name = _camel_to_snake(prop_name)
+        return [f'{ctx.indent}{snake_name} = {source_expr}["{prop_name}"]']
     if child.type == "pair_pattern":
         key_node = _child_by_type(child, "property_identifier")
         value_node = next(
@@ -80,7 +81,7 @@ def _destructure_object_property(
         )
         if key_node and value_node:
             key_name = _node_text(key_node)
-            val_name = _node_text(value_node)
+            val_name = _camel_to_snake(_node_text(value_node))
             return [f'{ctx.indent}{val_name} = {source_expr}["{key_name}"]']
     return []
 
@@ -119,7 +120,7 @@ def _transform_declarator(
         source_expr = transform_expression(value_node, ctx) if value_node else "None"
         return _transform_array_pattern_binding(lhs, source_expr, ctx)
 
-    var_name = _node_text(lhs)
+    var_name = _camel_to_snake(_node_text(lhs))
     rhs = transform_expression(value_node, ctx) if value_node else "None"
     return [f"{ctx.indent}{var_name} = {rhs}"]
 
@@ -182,7 +183,15 @@ def _transform_elif_chain(node: Node, ctx: TransformContext) -> list[str]:
     return _transform_else_clause(else_clause, ctx) if else_clause else []
 
 
+def _is_logging_guard(node: Node) -> bool:
+    paren = _child_by_type(node, "parenthesized_expression")
+    raw = _node_text(paren) if paren else _node_text(node)
+    return "ENABLE_LOGGING" in raw
+
+
 def _transform_if_statement(node: Node, ctx: TransformContext) -> list[str]:
+    if _is_logging_guard(node):
+        return []
     lines = _transform_if_branch(node, ctx, "if")
     lines.extend(_transform_elif_chain(node, ctx))
     return lines
@@ -209,17 +218,17 @@ def _extract_for_of_variable(node: Node) -> str:
 
     for part in named_before:
         if part.type == "array_pattern":
-            names = [_node_text(c) for c in part.children if c.type == "identifier"]
+            names = [_camel_to_snake(_node_text(c)) for c in part.children if c.type == "identifier"]
             return ", ".join(names)
         if part.type == "object_pattern":
             names = [
-                _node_text(c)
+                _camel_to_snake(_node_text(c))
                 for c in part.children
                 if c.type == "shorthand_property_identifier_pattern"
             ]
             return ", ".join(names)
         if part.type == "identifier":
-            return _node_text(part)
+            return _camel_to_snake(_node_text(part))
 
     return "_"
 
@@ -243,7 +252,7 @@ def _transform_for_in_statement(node: Node, ctx: TransformContext) -> list[str]:
     return lines
 
 
-def _extract_for_init_var(init_node: Node) -> tuple[str, str] | None:
+def _extract_for_init_var(init_node: Node, ctx: TransformContext) -> tuple[str, str] | None:
     if init_node.type != "lexical_declaration":
         return None
 
@@ -263,7 +272,21 @@ def _extract_for_init_var(init_node: Node) -> tuple[str, str] | None:
 
     if var_ident is None:
         return None
-    return _node_text(var_ident), _node_text(init_value_node) if init_value_node else "0"
+    init_val = transform_expression(init_value_node, ctx) if init_value_node else "0"
+    return _camel_to_snake(_node_text(var_ident)), init_val
+
+
+def _extract_for_condition_operator(cond_node: Node) -> str:
+    if cond_node.type != "binary_expression":
+        return ""
+    return next(
+        (
+            _node_text(c).strip()
+            for c in cond_node.children
+            if not c.is_named and _node_text(c).strip() in ("<", "<=", ">", ">=")
+        ),
+        "",
+    )
 
 
 def _extract_for_upper_bound(cond_node: Node, ctx: TransformContext) -> str | None:
@@ -277,17 +300,26 @@ def _extract_for_upper_bound(cond_node: Node, ctx: TransformContext) -> str | No
     )
 
 
-def _extract_c_style_for_range(node: Node, ctx: TransformContext) -> tuple[str, str, str] | None:
+def _is_decrementing_update(update_node: Node) -> bool:
+    raw = _node_text(update_node)
+    return "--" in raw or "-= 1" in raw or "-=1" in raw
+
+
+def _extract_c_style_for_range(node: Node, ctx: TransformContext) -> tuple[str, str, str, bool] | None:
     named = [c for c in node.children if c.is_named and c.type not in ("statement_block",)]
     if len(named) < MIN_FOR_HEADER_PARTS:
         return None
 
-    var_info = _extract_for_init_var(named[0])
+    var_info = _extract_for_init_var(named[0], ctx)
     upper_bound = _extract_for_upper_bound(named[1], ctx)
     if var_info is None or upper_bound is None:
         return None
 
-    return var_info[0], var_info[1], upper_bound
+    cond_op = _extract_for_condition_operator(named[1])
+    update_node = named[2] if len(named) > MIN_FOR_HEADER_PARTS else None
+    is_decrement = update_node is not None and _is_decrementing_update(update_node)
+
+    return var_info[0], var_info[1], upper_bound, is_decrement or cond_op in (">=", ">")
 
 
 def _transform_for_statement(node: Node, ctx: TransformContext) -> list[str]:
@@ -295,10 +327,13 @@ def _transform_for_statement(node: Node, ctx: TransformContext) -> list[str]:
 
     range_parts = _extract_c_style_for_range(node, ctx)
     if range_parts:
-        var_name, start_val, upper_bound = range_parts
-        range_expr = (
-            f"range({upper_bound})" if start_val == "0" else f"range({start_val}, {upper_bound})"
-        )
+        var_name, start_val, upper_bound, is_reverse = range_parts
+        if is_reverse:
+            range_expr = f"range({start_val}, {upper_bound} - 1, -1)"
+        elif start_val == "0":
+            range_expr = f"range({upper_bound})"
+        else:
+            range_expr = f"range({start_val}, {upper_bound})"
         lines = [f"{ctx.indent}for {var_name} in {range_expr}:"]
     else:
         lines = [f"{ctx.indent}for _ in range(0):"]
@@ -446,6 +481,9 @@ def _transform_continue_statement(_node: Node, ctx: TransformContext) -> list[st
     return [f"{ctx.indent}continue"]
 
 
+_SKIPPED_NODE_TYPES: frozenset[str] = frozenset({"comment"})
+
+
 STATEMENT_DISPATCH: dict[str, StatementTransformer] = {
     "lexical_declaration": _transform_lexical_declaration,
     "variable_declaration": _transform_variable_declaration,
@@ -462,17 +500,25 @@ STATEMENT_DISPATCH: dict[str, StatementTransformer] = {
 }
 
 
+def _drain_hoisted_lines(context: TransformContext) -> list[str]:
+    lines = list(context.hoisted_lines)
+    context.hoisted_lines.clear()
+    return lines
+
+
 def transform_statement(node: Node, context: TransformContext) -> list[str]:
+    if node.type in _SKIPPED_NODE_TYPES:
+        return []
     handler = STATEMENT_DISPATCH.get(node.type)
-    if handler:
-        return handler(node, context)
-    return [f"{context.indent}{_node_text(node)}"]
+    result = handler(node, context) if handler else [f"{context.indent}{_node_text(node)}"]
+    hoisted = _drain_hoisted_lines(context)
+    return hoisted + result if hoisted else result
 
 
 def transform_block(node: Node, context: TransformContext) -> list[str]:
     return [
         line
         for child in node.children
-        if child.is_named
+        if child.is_named and child.type != "comment"
         for line in transform_statement(child, context)
     ]

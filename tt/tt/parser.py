@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import tree_sitter as ts
 import tree_sitter_typescript as tst
 
-from tt.pipeline import ClassDef, FieldDef, MethodDef
+from tt.models import ClassDef, FieldDef, MethodDef
 
 if TYPE_CHECKING:
     from tree_sitter import Node, Tree
@@ -36,7 +36,7 @@ def _find_class_declarations(root: Node) -> list[tuple[Node, bool]]:
     return [
         _classify_class_node(child)
         for child in root.named_children
-        if child.type in ("class_declaration", "export_statement")
+        if child.type in ("class_declaration", "abstract_class_declaration", "export_statement")
         and _extract_class_node(child) is not None
     ]
 
@@ -51,8 +51,9 @@ def _classify_class_node(node: Node) -> tuple[Node, bool]:
 def _extract_class_node(node: Node) -> Node | None:
     return (
         node
-        if node.type == "class_declaration"
+        if node.type in ("class_declaration", "abstract_class_declaration")
         else _first_child_of_type(node, "class_declaration")
+        or _first_child_of_type(node, "abstract_class_declaration")
     )
 
 
