@@ -1,0 +1,72 @@
+{
+  "imports": {
+    "@ghostfolio/api/app/portfolio/calculator/portfolio-calculator": "app.wrapper.portfolio.calculator.portfolio_calculator",
+    "@ghostfolio/api/app/portfolio/interfaces/portfolio-order-item.interface": "app.implementation.portfolio.interfaces.portfolio_order_item",
+    "@ghostfolio/api/helper/portfolio.helper": "app.implementation.helpers.portfolio_helper",
+    "@ghostfolio/common/calculation-helper": "app.implementation.helpers.calculation_helper",
+    "@ghostfolio/common/helper": "app.implementation.helpers.common_helper",
+    "@ghostfolio/common/interfaces": "app.implementation.interfaces",
+    "@ghostfolio/common/models": "app.implementation.models",
+    "@ghostfolio/common/types": "app.implementation.types",
+    "@ghostfolio/common/types/performance-calculation-type.type": "app.implementation.types.performance_calculation_type",
+    "@nestjs/common": null
+  },
+  "types": {
+    "PortfolioCalculator": "PortfolioCalculator",
+    "PortfolioOrderItem": "dict",
+    "PortfolioSnapshot": "dict",
+    "TimelinePosition": "dict",
+    "AssetProfileIdentifier": "dict",
+    "SymbolMetrics": "dict",
+    "DateRange": "str",
+    "PerformanceCalculationType": "str",
+    "Logger": null
+  },
+  "libraries": {
+    "big.js": {
+      "module": "decimal",
+      "mappings": {
+        "Big": "Decimal"
+      },
+      "methods": {
+        "plus": "__add__",
+        "minus": "__sub__",
+        "times": "__mul__",
+        "div": "__truediv__",
+        "eq": "__eq__",
+        "gt": "__gt__",
+        "gte": "__ge__",
+        "lt": "__lt__",
+        "lte": "__le__",
+        "toNumber": "float",
+        "abs": "abs",
+        "round": "quantize"
+      },
+      "constructor": "Decimal"
+    },
+    "date-fns": {
+      "module": "app.implementation.helpers.date_utils",
+      "mappings": {
+        "addMilliseconds": "add_milliseconds",
+        "differenceInDays": "difference_in_days",
+        "eachYearOfInterval": "each_year_of_interval",
+        "format": "format_date",
+        "isBefore": "is_before",
+        "isThisYear": "is_this_year"
+      }
+    },
+    "lodash": {
+      "module": null,
+      "mappings": {
+        "cloneDeep": "copy.deepcopy",
+        "sortBy": "sorted"
+      }
+    }
+  },
+  "constants": {
+    "DATE_FORMAT": "yyyy-MM-dd"
+  },
+  "class_inheritance": {
+    "RoaiPortfolioCalculator": "PortfolioCalculator"
+  }
+}
