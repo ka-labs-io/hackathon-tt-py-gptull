@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 __all__ = [
     "TransformContext",
     "_camel_to_snake",
+    "_transform_lhs",
     "transform_expression",
 ]
 
@@ -484,7 +485,7 @@ def _inline_destructured_arrow(
         body_expr_node = _extract_arrow_body_expression(arrow_node)
         if body_expr_node is None:
             return None
-        replacements = {prop: f"{iter_var}['{prop}']" for prop in props}
+        replacements = {prop: f"{iter_var}.get('{prop}')" for prop in props}
         inlined_ctx = ctx.with_replacements(replacements)
         return transform_expression(body_expr_node, inlined_ctx)
     return _inline_simple_arrow(arrow_node, iter_var, ctx)
@@ -796,9 +797,19 @@ def _transform_member_number_epsilon() -> str:
     return "sys.float_info.epsilon"
 
 
-def _transform_member_length(obj_node: Node, ctx: TransformContext) -> str:
+def _transform_member_length(
+    obj_node: Node, ctx: TransformContext, is_optional: bool = False,
+) -> str:
+    needs_safe = is_optional or obj_node.type == "subscript_expression"
+    if needs_safe and obj_node.type == "subscript_expression":
+        non_chain = _skip_optional_chain_children(obj_node)
+        sub_obj = non_chain[0] if non_chain else None
+        sub_idx = non_chain[1] if len(non_chain) > 1 else None
+        sub_obj_expr = transform_expression(sub_obj, ctx) if sub_obj else ""
+        sub_idx_expr = transform_expression(sub_idx, ctx) if sub_idx else ""
+        return f"len({sub_obj_expr}.get({sub_idx_expr}, []))"
     obj_expr = transform_expression(obj_node, ctx)
-    return f"len({obj_expr})"
+    return f"len({obj_expr} or [])" if needs_safe else f"len({obj_expr})"
 
 
 def _transform_member_optional_access(obj_expr: str, prop_name: str) -> str:
@@ -806,6 +817,10 @@ def _transform_member_optional_access(obj_expr: str, prop_name: str) -> str:
 
 
 def _transform_member_dict_access(obj_expr: str, prop_name: str) -> str:
+    return f"{obj_expr}.get('{prop_name}')"
+
+
+def _transform_member_dict_access_lhs(obj_expr: str, prop_name: str) -> str:
     return f'{obj_expr}["{prop_name}"]'
 
 
@@ -846,7 +861,10 @@ def _resolve_member_with_object(
         py_prop = prop_name if _is_upper_constant(prop_name) else _camel_to_snake(prop_name)
         return f"{obj_text}.{py_prop}"
 
-    obj_expr = transform_expression(obj_node, ctx)
+    if is_optional and obj_node.type == "subscript_expression":
+        obj_expr = _safe_subscript_expr(obj_node, ctx)
+    else:
+        obj_expr = transform_expression(obj_node, ctx)
 
     if is_optional:
         return _transform_member_optional_access(obj_expr, prop_name)
@@ -872,13 +890,40 @@ def _transform_member_expression(node: Node, ctx: TransformContext) -> str:
         return special
 
     if prop_name == "length":
-        return _transform_member_length(obj_node, ctx)
+        return _transform_member_length(obj_node, ctx, is_optional)
 
     return _resolve_member_with_object(obj_node, prop_name, is_optional, ctx)
 
 
+def _is_likely_numeric_index(node: Node | None) -> bool:
+    if node is None:
+        return False
+    if node.type == "number":
+        return True
+    if node.type == "unary_expression":
+        return any(c.type == "number" for c in node.children)
+    if node.type == "binary_expression":
+        named = [c for c in node.children if c.is_named]
+        return any(_is_likely_numeric_index(c) for c in named)
+    if node.type == "identifier":
+        name = _node_text(node)
+        return name in ("i", "j", "k", "idx", "index")
+    return False
+
+
 def _skip_optional_chain_children(node: Node) -> list[Node]:
     return [child for child in node.children if child.is_named and child.type != "optional_chain"]
+
+
+def _safe_subscript_expr(node: Node, ctx: TransformContext) -> str:
+    non_chain = _skip_optional_chain_children(node)
+    obj = non_chain[0] if non_chain else None
+    idx = non_chain[1] if len(non_chain) > 1 else None
+    obj_expr = transform_expression(obj, ctx) if obj else ""
+    idx_expr = transform_expression(idx, ctx) if idx else ""
+    if _is_likely_numeric_index(idx):
+        return f"{obj_expr}[{idx_expr}]"
+    return f"{obj_expr}.get({idx_expr})"
 
 
 def _transform_subscript_expression(node: Node, ctx: TransformContext) -> str:
@@ -886,17 +931,21 @@ def _transform_subscript_expression(node: Node, ctx: TransformContext) -> str:
     non_chain_named = _skip_optional_chain_children(node)
     obj_node = non_chain_named[0] if non_chain_named else None
     index_node = non_chain_named[1] if len(non_chain_named) > 1 else None
-    obj_expr = transform_expression(obj_node, ctx) if obj_node is not None else ""
     idx_expr = transform_expression(index_node, ctx) if index_node is not None else ""
-    is_numeric = (
-        index_node is not None
-        and index_node.type in ("number", "unary_expression")
-    )
+    if is_optional and obj_node is not None and obj_node.type == "subscript_expression":
+        inner_non_chain = _skip_optional_chain_children(obj_node)
+        inner_obj = inner_non_chain[0] if inner_non_chain else None
+        inner_idx = inner_non_chain[1] if len(inner_non_chain) > 1 else None
+        inner_obj_expr = transform_expression(inner_obj, ctx) if inner_obj else ""
+        inner_idx_expr = transform_expression(inner_idx, ctx) if inner_idx else ""
+        return f"_get(_get({inner_obj_expr}, {inner_idx_expr}, {{}}), {idx_expr})"
+    obj_expr = transform_expression(obj_node, ctx) if obj_node is not None else ""
+    is_numeric_idx = _is_likely_numeric_index(index_node)
     if is_optional:
-        return f"({obj_expr}.get({idx_expr}) if {obj_expr} is not None else None)"
-    if is_numeric:
+        return f"(_get({obj_expr}, {idx_expr}) if {obj_expr} is not None else None)"
+    if is_numeric_idx:
         return f"{obj_expr}[{idx_expr}]"
-    return f"{obj_expr}.get({idx_expr})"
+    return f"_get({obj_expr}, {idx_expr})"
 
 
 def _find_operator_token(node: Node, valid_ops: frozenset[str]) -> str:
@@ -905,6 +954,44 @@ def _find_operator_token(node: Node, valid_ops: frozenset[str]) -> str:
         None,
     )
     return _node_text(op_node).strip() if op_node is not None else ""
+
+
+def _transform_nullish_subscript(
+    left_node: Node, right_expr: str, ctx: TransformContext,
+) -> str:
+    has_chain = _has_optional_chain(left_node)
+    non_chain = _skip_optional_chain_children(left_node)
+    obj_sub = non_chain[0] if non_chain else None
+    idx_sub = non_chain[1] if len(non_chain) > 1 else None
+    idx_sub_expr = transform_expression(idx_sub, ctx) if idx_sub else ""
+    if has_chain and obj_sub is not None and obj_sub.type == "subscript_expression":
+        inner_nc = _skip_optional_chain_children(obj_sub)
+        inner_obj = inner_nc[0] if inner_nc else None
+        inner_idx = inner_nc[1] if len(inner_nc) > 1 else None
+        inner_obj_expr = transform_expression(inner_obj, ctx) if inner_obj else ""
+        inner_idx_expr = transform_expression(inner_idx, ctx) if inner_idx else ""
+        return f"{inner_obj_expr}.get({inner_idx_expr}, {{}}).get({idx_sub_expr}, {right_expr})"
+    obj_sub_expr = transform_expression(obj_sub, ctx) if obj_sub else ""
+    if has_chain:
+        return f"({obj_sub_expr}.get({idx_sub_expr}, {right_expr}) if {obj_sub_expr} is not None else {right_expr})"
+    return f"{obj_sub_expr}.get({idx_sub_expr}, {right_expr})"
+
+
+def _transform_nullish_member(
+    left_node: Node, right_expr: str, ctx: TransformContext,
+) -> str | None:
+    obj_mem = _named_child_at(left_node, 0)
+    prop_mem = _get_member_property(left_node)
+    is_optional_mem = _has_optional_chain(left_node)
+    obj_mem_expr = transform_expression(obj_mem, ctx) if obj_mem else ""
+    is_dict = (_looks_like_domain_property_access(obj_mem, prop_mem) if obj_mem else False)
+    if is_dict and is_optional_mem:
+        return f"({obj_mem_expr}.get('{prop_mem}', {right_expr}) if {obj_mem_expr} is not None else {right_expr})"
+    if is_dict:
+        return f"{obj_mem_expr}.get('{prop_mem}', {right_expr})"
+    if is_optional_mem:
+        return f"({obj_mem_expr}.{_camel_to_snake(prop_mem)} if {obj_mem_expr} is not None else {right_expr})"
+    return None
 
 
 def _transform_binary_expression(node: Node, ctx: TransformContext) -> str:
@@ -917,21 +1004,11 @@ def _transform_binary_expression(node: Node, ctx: TransformContext) -> str:
 
     if ts_operator == "??":
         if left_node is not None and left_node.type == "subscript_expression":
-            has_chain = _has_optional_chain(left_node)
-            non_chain = _skip_optional_chain_children(left_node)
-            obj_sub = non_chain[0] if non_chain else None
-            idx_sub = non_chain[1] if len(non_chain) > 1 else None
-            obj_sub_expr = transform_expression(obj_sub, ctx) if obj_sub else ""
-            idx_sub_expr = transform_expression(idx_sub, ctx) if idx_sub else ""
-            if has_chain:
-                return f"({obj_sub_expr}.get({idx_sub_expr}, {right_expr}) if {obj_sub_expr} is not None else {right_expr})"
-            return f"{obj_sub_expr}.get({idx_sub_expr}, {right_expr})"
+            return _transform_nullish_subscript(left_node, right_expr, ctx)
         if left_node is not None and left_node.type == "member_expression":
-            obj_mem = _named_child_at(left_node, 0)
-            prop_mem = _get_member_property(left_node)
-            obj_mem_expr = transform_expression(obj_mem, ctx) if obj_mem else ""
-            if _looks_like_domain_property_access(obj_mem, prop_mem) if obj_mem else False:
-                return f"{obj_mem_expr}.get('{prop_mem}', {right_expr})"
+            result = _transform_nullish_member(left_node, right_expr, ctx)
+            if result is not None:
+                return result
         return f"({left_expr} if {left_expr} is not None else {right_expr})"
 
     if ts_operator == "instanceof":
@@ -1063,7 +1140,7 @@ def _build_destructure_lines(
     ctx: TransformContext,
 ) -> list[str]:
     return [
-        f'{ctx.indent}{snake_name} = {param_name}["{original_name}"]'
+        f'{ctx.indent}{snake_name} = {param_name}.get("{original_name}")'
         for original_name, snake_name in keys
     ]
 
@@ -1218,11 +1295,31 @@ def _transform_subscript_as_target(node: Node, ctx: TransformContext) -> str:
     return f"{obj_expr}[{idx_expr}]"
 
 
+def _transform_member_as_target(node: Node, ctx: TransformContext) -> str:
+    obj_node = _named_child_at(node, 0)
+    prop_name = _get_member_property(node)
+    if obj_node is None:
+        return prop_name
+    special = _resolve_special_member(_node_text(obj_node), prop_name)
+    if special is not None:
+        return special
+    if prop_name == "length":
+        return _transform_member_length(obj_node, ctx)
+    obj_expr = transform_expression(obj_node, ctx)
+    types_map = _extract_types_map(ctx.import_map)
+    has_dict_types = any(types_map.get(t) == "dict" for t in types_map)
+    if has_dict_types and _looks_like_domain_property_access(obj_node, prop_name):
+        return _transform_member_dict_access_lhs(obj_expr, prop_name)
+    return f"{obj_expr}.{_camel_to_snake(prop_name)}"
+
+
 def _transform_lhs(node: Node | None, ctx: TransformContext) -> str:
     if node is None:
         return ""
     if node.type == "subscript_expression":
         return _transform_subscript_as_target(node, ctx)
+    if node.type == "member_expression":
+        return _transform_member_as_target(node, ctx)
     return transform_expression(node, ctx)
 
 

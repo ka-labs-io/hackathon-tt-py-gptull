@@ -291,6 +291,15 @@ def _generate_class_init(classes: list[ClassDef]) -> list[str]:
     return lines
 
 
+def _generate_safe_get_helper() -> list[str]:
+    return [
+        "",
+        "def _get(obj, key, default=None):",
+        f"{INDENT_UNIT}return obj[key] if isinstance(obj, list) else (obj.get(key, default) if isinstance(obj, dict) else default)",
+        "",
+    ]
+
+
 def assemble_module(
     fragments: list[str],
     import_map: ImportMap,
@@ -300,6 +309,8 @@ def assemble_module(
     modules = _collect_used_modules(all_methods)
 
     parts = _build_header(import_map, modules, all_methods)
+    if "_get(" in all_methods:
+        parts.extend(_generate_safe_get_helper())
     parts.append("")
     parts.append(_build_class_declaration(import_map))
     parts.append("")

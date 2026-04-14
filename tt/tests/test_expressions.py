@@ -195,7 +195,7 @@ class TestPropertyAccess:
 
     def test_domain_dict_access(self) -> None:
         result = _transform("let x = order.unitPrice;")
-        assert '["unitPrice"]' in result
+        assert ".get('unitPrice')" in result
 
     def test_length_to_len(self) -> None:
         result = _transform("let x = arr.length;")
@@ -406,8 +406,7 @@ class TestObjectStaticMethods:
 class TestOptionalChainingSubscript:
     def test_optional_subscript_produces_guard(self) -> None:
         result = _transform("let x = marketSymbolMap[dateString]?.[symbol];")
-        assert "is not None" in result
-        assert "else None" in result
+        assert "_get(" in result
 
     def test_optional_subscript_preserves_object(self) -> None:
         result = _transform("let x = marketSymbolMap[dateString]?.[symbol];")
@@ -426,7 +425,7 @@ class TestFilterDestructuredInlining:
             "positions.filter(({ includeInTotalAssetValue }) => {"
             " return includeInTotalAssetValue; })"
         )
-        assert "x['includeInTotalAssetValue']" in result
+        assert "x.get('includeInTotalAssetValue')" in result
         assert "lambda" not in result
 
     def test_filter_destructured_with_includes(self) -> None:
@@ -434,7 +433,7 @@ class TestFilterDestructuredInlining:
             "this.activities.filter(({ type }) => {"
             " return ['BUY', 'SELL'].includes(type); })"
         )
-        assert "x['type']" in result
+        assert "x.get('type')" in result
         assert "lambda" not in result
         assert "in" in result
 
@@ -443,7 +442,7 @@ class TestFilterDestructuredInlining:
             "this.activities.filter(({ SymbolProfile }) => {"
             " return SymbolProfile.symbol === symbol; })"
         )
-        assert "x['SymbolProfile']" in result
+        assert "x.get('SymbolProfile')" in result
         assert "lambda" not in result
 
     def test_filter_non_destructured_inlines(self) -> None:
@@ -455,12 +454,12 @@ class TestFilterDestructuredInlining:
         result = _transform(
             "arr.map(({ name }) => { return name; })"
         )
-        assert "x['name']" in result
+        assert "x.get('name')" in result
         assert "lambda" not in result
 
     def test_find_destructured_inlines(self) -> None:
         result = _transform(
             "arr.find(({ id }) => { return id === target; })"
         )
-        assert "x['id']" in result
+        assert "x.get('id')" in result
         assert "lambda" not in result

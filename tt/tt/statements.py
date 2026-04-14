@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, TypeAlias
 if TYPE_CHECKING:
     from tree_sitter import Node
 
-from tt.expressions import INDENT_UNIT, TransformContext, _camel_to_snake, transform_expression
+from tt.expressions import INDENT_UNIT, TransformContext, _camel_to_snake, _transform_lhs, transform_expression
 
 __all__ = [
     "transform_statement",
@@ -384,7 +384,7 @@ def _transform_assignment_expression(node: Node, ctx: TransformContext) -> list[
     named = _named_children(node)
     lhs_node = named[0] if named else None
     rhs_node = named[1] if len(named) >= MIN_ASSIGNMENT_OPERANDS else None
-    lhs = transform_expression(lhs_node, ctx) if lhs_node else "_"
+    lhs = _transform_lhs(lhs_node, ctx) if lhs_node else "_"
     rhs = transform_expression(rhs_node, ctx) if rhs_node else "None"
     return [f"{ctx.indent}{lhs} = {rhs}"]
 
@@ -393,7 +393,7 @@ def _transform_augmented_assignment(node: Node, ctx: TransformContext) -> list[s
     named = _named_children(node)
     lhs_node = named[0] if named else None
     rhs_node = named[1] if len(named) >= MIN_ASSIGNMENT_OPERANDS else None
-    lhs = transform_expression(lhs_node, ctx) if lhs_node else "_"
+    lhs = _transform_lhs(lhs_node, ctx) if lhs_node else "_"
     rhs = transform_expression(rhs_node, ctx) if rhs_node else "0"
 
     operator_node = next(

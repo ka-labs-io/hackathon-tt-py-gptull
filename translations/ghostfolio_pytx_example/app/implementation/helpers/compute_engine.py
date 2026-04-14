@@ -94,7 +94,97 @@ def make_investments_response(
     snapshot: dict,
     group_by: str | None = None,
 ) -> dict:
-    return {"investments": []}
+    activities = getattr(calculator, "activities", []) or []
+    if not activities:
+        return {"investments": []}
+
+    sorted_acts = sorted(
+        activities,
+        key=lambda a: (a.get("date", ""), a.get("type", "")),
+    )
+
+    investment_deltas = _compute_investment_deltas(sorted_acts)
+
+    if group_by is None:
+        investments = [
+            {"date": date, "investment": float(delta)}
+            for date, delta in sorted(investment_deltas.items())
+        ]
+    else:
+        investments = _group_investment_deltas(investment_deltas, group_by)
+
+    return {"investments": investments}
+
+
+def _compute_investment_deltas(sorted_activities: list[dict]) -> dict[str, Decimal]:
+    symbol_state: dict[str, dict] = {}
+    date_deltas: dict[str, Decimal] = {}
+
+    for activity in sorted_activities:
+        act_type = activity.get("type", "")
+        if act_type not in ("BUY", "SELL"):
+            continue
+
+        symbol = activity.get("symbol", "")
+        qty = Decimal(str(activity.get("quantity", 0)))
+        unit_price = Decimal(str(activity.get("unitPrice", 0)))
+        date = activity.get("date", "")
+        factor = 1 if act_type == "BUY" else -1
+
+        state = symbol_state.get(symbol, {
+            "total_investment": Decimal(0),
+            "total_units": Decimal(0),
+        })
+
+        total_investment = state["total_investment"]
+        total_units = state["total_units"]
+
+        delta: Decimal
+        if act_type == "BUY":
+            delta = qty * unit_price
+        elif total_units > 0:
+            delta = (total_investment / total_units) * qty * Decimal(-1)
+        else:
+            delta = Decimal(0)
+
+        new_investment = total_investment + delta
+        new_units = total_units + qty * factor
+
+        if abs(new_units) < Decimal("1e-10"):
+            new_investment = Decimal(0)
+            new_units = Decimal(0)
+
+        symbol_state[symbol] = {
+            "total_investment": new_investment,
+            "total_units": new_units,
+        }
+
+        date_deltas[date] = date_deltas.get(date, Decimal(0)) + delta
+
+    return date_deltas
+
+
+def _group_investment_deltas(
+    date_deltas: dict[str, Decimal],
+    group_by: str,
+) -> list[dict]:
+    grouped: dict[str, Decimal] = {}
+
+    for date, delta in date_deltas.items():
+        group_key = (
+            date[:7] if group_by == "month" else date[:4]
+        )
+        grouped[group_key] = grouped.get(group_key, Decimal(0)) + delta
+
+    return [
+        {
+            "date": (
+                f"{key}-01" if group_by == "month" else f"{key}-01-01"
+            ),
+            "investment": float(value),
+        }
+        for key, value in sorted(grouped.items())
+    ]
 
 
 def make_holdings_response(calculator: object, snapshot: dict) -> dict:
