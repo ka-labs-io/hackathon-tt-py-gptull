@@ -71,7 +71,13 @@
 
 ### Phase 5: Test-Driven Grind
 **Status:** Blocked on Phase 4
-**Loop:** eval → diagnose failures → fix translator → merge → eval
+**Loop:**
+1. `/eval` → categorized failure table + top 3 fix suggestions
+2. `/trace-failure <test>` → fix plan for highest-impact failure
+3. Dispatch `/transpiler-dev` agent with fix plan
+4. `/review-output` → quality gate on translated code
+5. `/score` → confirm improvement, update PLAN.md
+6. Repeat until diminishing returns
 **Exit criteria:** Diminishing returns (< 5% gain per cycle)
 **Target score:** 80%+
 
@@ -90,11 +96,29 @@
 
 (none currently)
 
+## Slash Commands
+
+| Command | Purpose | When to Use |
+|---------|---------|-------------|
+| `/eval` | Full evaluation: translate, test, score, categorize failures, suggest fixes | After every phase merge (EVALUATE step) |
+| `/score` | Lightweight dashboard with delta vs last snapshot | Mid-phase sanity check, after single-track merge |
+| `/trace-failure <test>` | Trace one failing test → TS source → fix plan for translator | Phase 5 grind: feed output into `/transpiler-dev` agent |
+| `/review-output` | Quality review of translated Python (pyright, ruff, idiom check) | After Phase 2+ when translated output exists (REVIEW step) |
+| `/transpiler-dev` | Senior compiler engineer persona for BUILD agents | Every build task |
+| `/commit` | Atomic conventional commit | After each track merge |
+
 ## Orchestrator Protocol
 
-After each phase:
-1. Run /eval → update score progression table
-2. Adjust phase plan based on results (reorder, add/remove tracks)
-3. Surface decisions/problems to user if any
-4. If nothing to address → compact context and continue automatically
-5. If decisions needed → pause for user input
+### Per-Track: BUILD → REVIEW → FIX → MERGE
+1. Dispatch `/transpiler-dev` agent in worktree with focused task brief
+2. Dispatch fresh review agent on same worktree (no prior context). After Phase 2+, include `/review-output`.
+3. If review finds issues → fix agent in same worktree. One cycle only.
+4. Merge worktree to main. `/commit`.
+
+### Per-Phase: EVALUATE → UPDATE → COMPACT → CONTINUE
+1. `/eval` → full failure analysis + score
+2. `/score` → snapshot for delta tracking
+3. Update this file: score progression, adjusted plan, open decisions, known problems
+4. Surface decisions/problems to user if any exist
+5. If nothing to address → compact context automatically, continue to next phase
+6. If decisions needed → pause for user input, compact after response
