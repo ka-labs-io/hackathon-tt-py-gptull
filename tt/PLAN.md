@@ -5,8 +5,8 @@
 
 ## Current State
 
-- **Phase:** 0 (complete)
-- **Score:** 0/346 tests (0%), 82.8 quality, 12.4 overall (F)
+- **Phase:** 1 (complete)
+- **Score:** 27.4 tests, 77.4 quality, 34.9 overall (F)
 - **Rule violations:** 0
 
 ## Score Progression
@@ -15,6 +15,7 @@
 |-------|------|-------|---------|---------|-------|
 | baseline | 2026-04-14 | 0/346 | 82.8 | 12.4 (F) | Stub implementation |
 | phase-0 | 2026-04-14 | 0/346 | 82.8 | 12.4 (F) | Infrastructure: tree-sitter, pipeline, import map |
+| phase-1 | 2026-04-14 | 27.4 | 77.4 | 34.9 (F) | Engines: parser, expressions, statements — 137 unit tests, 82% coverage |
 
 ## Locked-in Architecture Decisions
 
@@ -37,17 +38,17 @@
 **Exit criteria:** `make evaluate_tt_ghostfolio` runs, 0 rule violations ✓
 **Result:** 0% tests, 0 rule violations
 
-### Phase 1: Engines ← CURRENT
-**Status:** Ready
+### Phase 1: Engines ✓
+**Status:** Complete
 **Tracks (parallel):**
-- [ ] A: tt/tt/parser.py — tree-sitter parse + class/method extraction + unit tests
-- [ ] B: tt/tt/expressions.py — Big.js→Decimal, property→dict, operators, ternary, calls + unit tests
-- [ ] C: tt/tt/statements.py — var decl, if/else, for/while, return, destructuring + unit tests
-**Exit criteria:** Unit tests pass, coverage ≥ 80%
-**Target score:** 0% (still building)
+- [x] A: tt/tt/parser.py — tree-sitter parse + class/method extraction (27 tests, 99% coverage)
+- [x] B: tt/tt/expressions.py — Big.js→Decimal, property→dict, operators, ternary, calls (69 tests, 89% coverage)
+- [x] C: tt/tt/statements.py — var decl, if/else, for/while, return, destructuring (41 tests, 90% coverage)
+**Exit criteria:** Unit tests pass ✓, coverage ≥ 80% ✓ (82%)
+**Result:** 27.4 tests, 34.9 overall — significant jump from baseline
 
-### Phase 2: Integration + First Blood
-**Status:** Blocked on Phase 1
+### Phase 2: Integration + First Blood ← CURRENT
+**Status:** Ready
 **Steps:**
 1. Wire pipeline stages together in translator.py (sequential)
 2. Parallel tracks:
