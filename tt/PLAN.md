@@ -5,8 +5,8 @@
 
 ## Current State
 
-- **Phase:** 2 (in progress)
-- **Score:** 7.44% tests (14/135 pass), 71.4 quality, 17.0 overall (F)
+- **Phase:** 3 (in progress)
+- **Score:** 42.56% tests (73/135 pass), 71.6 quality, ~47 overall
 - **Rule violations:** 0
 
 ## Score Progression
@@ -17,6 +17,7 @@
 | phase-0 | 2026-04-14 | 0/346 | 82.8 | 12.4 (F) | Infrastructure: tree-sitter, pipeline, import map |
 | phase-1 | 2026-04-14 | 27.4 | 77.4 | 34.9 (F) | Engines: parser, expressions, statements — 137 unit tests, 82% coverage |
 | phase-2a | 2026-04-14 | 7.44% (14/135) | 71.4 | 17.0 (F) | Pipeline integration: parse→extract→transform→assemble end-to-end |
+| phase-3a | 2026-04-14 | 42.56% (73/135) | 71.6 | ~47 | Dict safety + error recovery + investments grouping |
 
 ## Locked-in Architecture Decisions
 
