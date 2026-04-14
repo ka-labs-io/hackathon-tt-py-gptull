@@ -43,6 +43,9 @@ def compute_snapshot(calculator: object) -> dict:
         )
         pos = {**item, **metrics}
         pos["includeInTotalAssetValue"] = True
+        pos.setdefault("investment", pos.get("totalInvestment", Decimal(0)))
+        pos.setdefault("investmentWithCurrencyEffect", pos.get("totalInvestmentWithCurrencyEffect", Decimal(0)))
+        pos.setdefault("feeInBaseCurrency", pos.get("feesWithCurrencyEffect", Decimal(0)))
         qty = float(item.get("quantity", 0))
         price = float(item.get("averagePrice", 0))
         pos["valueInBaseCurrency"] = qty * price
@@ -63,6 +66,8 @@ def _normalize_activities(activities: list[dict]) -> list[dict]:
                 "dataSource": a.get("dataSource", "YAHOO"),
                 "assetSubClass": None,
             }
+        if "date" in normalized and isinstance(normalized["date"], datetime):
+            normalized["date"] = format_date(normalized["date"])
         if "fee" in normalized and not isinstance(normalized["fee"], Decimal):
             normalized["fee"] = Decimal(str(normalized["fee"]))
         if "feeInBaseCurrency" not in normalized:
@@ -185,7 +190,7 @@ def _date_range(activities: list[dict]) -> dict:
     if not dates:
         today = format_date(datetime.now())
         return {"start": today, "end": today}
-    start = min(dates)
+    start = format_date(min(dates))
     end = format_date(datetime.now())
     return {"start": start, "end": end}
 

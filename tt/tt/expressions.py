@@ -35,6 +35,7 @@ class TransformContext:
     scope_vars: frozenset[str] = field(default_factory=frozenset[str])
     identifier_replacements: dict[str, str] = field(default_factory=dict)
     hoisted_lines: list[str] = field(default_factory=list)
+    is_lhs: bool = False
     _arrow_counter: list[int] = field(default_factory=lambda: [0])
 
     @property
@@ -892,6 +893,8 @@ def _transform_subscript_expression(node: Node, ctx: TransformContext) -> str:
         index_node is not None
         and index_node.type in ("number", "unary_expression")
     )
+    if ctx.is_lhs:
+        return f"{obj_expr}[{idx_expr}]"
     if is_optional:
         return f"({obj_expr}.get({idx_expr}) if {obj_expr} is not None else None)"
     if is_numeric:
