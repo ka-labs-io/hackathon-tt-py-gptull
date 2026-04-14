@@ -111,3 +111,37 @@ These patterns appear in getSymbolMetrics but may not be handled by Phase 1 engi
 | Report | 9 | ~3 | 6 (skip for now) |
 
 **Phase 3 unlocks Performance + Details = 41 tests combined = biggest score jump possible.**
+
+## Investments Quick Wins (7 failing tests, independent of Phase 3)
+
+The `get_investments(group_by)` endpoint already passes 18/25 tests. The 7 failures are:
+
+### What's failing and how to fix
+
+**1. Monthly grouping (2 tests)**
+- Tests like `test_investments_by_month` expect investments aggregated by month
+- Group historicalData's `investmentValueWithCurrencyEffect` by `YYYY-MM` prefix
+- Return dates as `YYYY-MM-01`, values summed per month
+
+**2. Yearly grouping (2 tests)**
+- Same as monthly but group by `YYYY` prefix, return dates as `YYYY-01-01`
+
+**3. Daily/ungrouped investments (1-2 tests)**
+- Return per-transaction-point investment values (one entry per date with activity)
+- Must include sells as negative investment values
+
+**4. Currency effect field (cross-cutting)**
+- Grouping must use `investmentValueWithCurrencyEffect`, NOT `totalInvestment`
+- Wrong field = wrong grouped values even if grouping logic is correct
+
+**5. Sells as negative (cross-cutting)**
+- Sales must record as negative investment (e.g., `-151.6`)
+- If only summing buys, grouped totals will be too high
+
+### Implementation approach
+The fix is in the translated `get_investments()` method — it needs to:
+1. Access `self.snapshot.historicalData` (or equivalent from computeSnapshot)
+2. For each entry, extract `investmentValueWithCurrencyEffect`
+3. If `group_by == "month"`: aggregate by `YYYY-MM`, return as `YYYY-MM-01`
+4. If `group_by == "year"`: aggregate by `YYYY`, return as `YYYY-01-01`
+5. If no grouping: return daily values from transaction points
