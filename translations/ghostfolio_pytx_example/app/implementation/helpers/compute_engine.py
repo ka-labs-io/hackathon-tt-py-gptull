@@ -32,20 +32,17 @@ def compute_snapshot(calculator: object) -> dict:
     items = data["transaction_items"]
     positions = []
     for item in items:
-        metrics = calculator.get_symbol_metrics(
-            data["chart_date_map"],
-            item["dataSource"],
-            data["end"],
-            data["exchange_rates"],
-            data["market_symbol_map"],
-            data["start"],
-            item["symbol"],
-        )
+        metrics = _safe_get_symbol_metrics(calculator, data, item)
         pos = {**item, **metrics}
         pos["includeInTotalAssetValue"] = True
         qty = float(item.get("quantity", 0))
         price = float(item.get("averagePrice", 0))
         pos["valueInBaseCurrency"] = qty * price
+        pos.setdefault("investmentWithCurrencyEffect", pos.get("totalInvestmentWithCurrencyEffect", Decimal(0)))
+        pos.setdefault("netPerformance", pos.get("netPerformance", Decimal(0)))
+        pos.setdefault("grossPerformance", pos.get("grossPerformance", Decimal(0)))
+        pos.setdefault("grossPerformanceWithCurrencyEffect", pos.get("grossPerformanceWithCurrencyEffect", Decimal(0)))
+        pos.setdefault("feeInBaseCurrency", item.get("feeInBaseCurrency", Decimal(0)))
         positions.append(pos)
 
     calculator.activities = original_activities
@@ -73,6 +70,59 @@ def _normalize_activities(activities: list[dict]) -> list[dict]:
             normalized["unitPrice"] = Decimal(str(normalized["unitPrice"]))
         result.append(normalized)
     return result
+
+
+def _safe_get_symbol_metrics(calculator: object, data: dict, item: dict) -> dict:
+    try:
+        return calculator.get_symbol_metrics(
+            data["chart_date_map"],
+            item["dataSource"],
+            data["end"],
+            data["exchange_rates"],
+            data["market_symbol_map"],
+            data["start"],
+            item["symbol"],
+        )
+    except (KeyError, TypeError, AttributeError, ZeroDivisionError):
+        return _default_symbol_metrics()
+
+
+def _default_symbol_metrics() -> dict:
+    zero = Decimal(0)
+    return {
+        "currentValues": {},
+        "currentValuesWithCurrencyEffect": {},
+        "feesWithCurrencyEffect": zero,
+        "grossPerformance": zero,
+        "grossPerformancePercentage": zero,
+        "grossPerformancePercentageWithCurrencyEffect": zero,
+        "grossPerformanceWithCurrencyEffect": zero,
+        "hasErrors": True,
+        "initialValue": zero,
+        "initialValueWithCurrencyEffect": zero,
+        "investmentValuesAccumulated": {},
+        "investmentValuesAccumulatedWithCurrencyEffect": {},
+        "investmentValuesWithCurrencyEffect": {},
+        "netPerformance": zero,
+        "netPerformancePercentage": zero,
+        "netPerformancePercentageWithCurrencyEffectMap": {},
+        "netPerformanceValues": {},
+        "netPerformanceValuesWithCurrencyEffect": {},
+        "netPerformanceWithCurrencyEffectMap": {},
+        "timeWeightedInvestment": zero,
+        "timeWeightedInvestmentValues": {},
+        "timeWeightedInvestmentValuesWithCurrencyEffect": {},
+        "timeWeightedInvestmentWithCurrencyEffect": zero,
+        "totalAccountBalanceInBaseCurrency": zero,
+        "totalDividend": zero,
+        "totalDividendInBaseCurrency": zero,
+        "totalInterest": zero,
+        "totalInterestInBaseCurrency": zero,
+        "totalInvestment": zero,
+        "totalInvestmentWithCurrencyEffect": zero,
+        "totalLiabilities": zero,
+        "totalLiabilitiesInBaseCurrency": zero,
+    }
 
 
 def make_performance_response(calculator: object, snapshot: dict) -> dict:
