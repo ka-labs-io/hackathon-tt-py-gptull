@@ -1,44 +1,24 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypeAlias
 
 if TYPE_CHECKING:
     from tree_sitter import Node
 
-from tt.expressions import transform_expression
+from tt.expressions import INDENT_UNIT, TransformContext, transform_expression
 
 __all__ = [
-    "TransformContext",
     "transform_statement",
     "transform_block",
 ]
 
-
-INDENT_UNIT: str = "    "
 
 MIN_PARENTHESIZED_CHILDREN: int = 3
 MIN_DECLARATOR_CHILDREN_FOR_VALUE: int = 2
 MIN_FOR_HEADER_PARTS: int = 2
 MIN_BINARY_OPERANDS: int = 2
 MIN_ASSIGNMENT_OPERANDS: int = 2
-
-
-@dataclass(frozen=True)
-class TransformContext:
-    indent_level: int = 0
-    scope_vars: frozenset[str] = frozenset()
-
-    @property
-    def indent(self) -> str:
-        return INDENT_UNIT * self.indent_level
-
-    def indented(self) -> TransformContext:
-        return TransformContext(
-            indent_level=self.indent_level + 1,
-            scope_vars=self.scope_vars,
-        )
 
 
 StatementTransformer: TypeAlias = Callable[["Node", TransformContext], list[str]]
@@ -132,15 +112,15 @@ def _transform_declarator(
         return []
 
     if lhs.type == "object_pattern":
-        source_expr = transform_expression(value_node) if value_node else "None"
+        source_expr = transform_expression(value_node, ctx) if value_node else "None"
         return _transform_object_pattern_binding(lhs, source_expr, ctx)
 
     if lhs.type == "array_pattern":
-        source_expr = transform_expression(value_node) if value_node else "None"
+        source_expr = transform_expression(value_node, ctx) if value_node else "None"
         return _transform_array_pattern_binding(lhs, source_expr, ctx)
 
     var_name = _node_text(lhs)
-    rhs = transform_expression(value_node) if value_node else "None"
+    rhs = transform_expression(value_node, ctx) if value_node else "None"
     return [f"{ctx.indent}{var_name} = {rhs}"]
 
 
@@ -154,10 +134,10 @@ def _transform_variable_declaration(node: Node, ctx: TransformContext) -> list[s
     return [line for declarator in declarators for line in _transform_declarator(declarator, ctx)]
 
 
-def _extract_condition_expression(node: Node) -> str:
+def _extract_condition_expression(node: Node, ctx: TransformContext) -> str:
     paren = _child_by_type(node, "parenthesized_expression")
     inner = _strip_parenthesized(paren) if paren else None
-    return transform_expression(inner) if inner else "True"
+    return transform_expression(inner, ctx) if inner else "True"
 
 
 def _extract_consequence_block(node: Node) -> Node | None:
@@ -169,7 +149,7 @@ def _transform_if_branch(
     ctx: TransformContext,
     keyword: str,
 ) -> list[str]:
-    condition = _extract_condition_expression(node)
+    condition = _extract_condition_expression(node, ctx)
     consequence = _extract_consequence_block(node)
     lines = [f"{ctx.indent}{keyword} {condition}:"]
     if consequence:
@@ -244,15 +224,15 @@ def _extract_for_of_variable(node: Node) -> str:
     return "_"
 
 
-def _extract_for_of_iterable(node: Node) -> str:
+def _extract_for_of_iterable(node: Node, ctx: TransformContext) -> str:
     _, after_of = _split_for_in_at_of(node)
     named_after = [c for c in after_of if c.is_named and c.type != "statement_block"]
-    return transform_expression(named_after[0]) if named_after else "[]"
+    return transform_expression(named_after[0], ctx) if named_after else "[]"
 
 
 def _transform_for_in_statement(node: Node, ctx: TransformContext) -> list[str]:
     variable = _extract_for_of_variable(node)
-    iterable = _extract_for_of_iterable(node)
+    iterable = _extract_for_of_iterable(node, ctx)
     body = _child_by_type(node, "statement_block")
     lines = [f"{ctx.indent}for {variable} in {iterable}:"]
     if body:
@@ -286,24 +266,24 @@ def _extract_for_init_var(init_node: Node) -> tuple[str, str] | None:
     return _node_text(var_ident), _node_text(init_value_node) if init_value_node else "0"
 
 
-def _extract_for_upper_bound(cond_node: Node) -> str | None:
+def _extract_for_upper_bound(cond_node: Node, ctx: TransformContext) -> str | None:
     if cond_node.type != "binary_expression":
         return None
     cond_children = _named_children(cond_node)
     return (
-        transform_expression(cond_children[-1])
+        transform_expression(cond_children[-1], ctx)
         if len(cond_children) >= MIN_BINARY_OPERANDS
         else None
     )
 
 
-def _extract_c_style_for_range(node: Node) -> tuple[str, str, str] | None:
+def _extract_c_style_for_range(node: Node, ctx: TransformContext) -> tuple[str, str, str] | None:
     named = [c for c in node.children if c.is_named and c.type not in ("statement_block",)]
     if len(named) < MIN_FOR_HEADER_PARTS:
         return None
 
     var_info = _extract_for_init_var(named[0])
-    upper_bound = _extract_for_upper_bound(named[1])
+    upper_bound = _extract_for_upper_bound(named[1], ctx)
     if var_info is None or upper_bound is None:
         return None
 
@@ -313,7 +293,7 @@ def _extract_c_style_for_range(node: Node) -> tuple[str, str, str] | None:
 def _transform_for_statement(node: Node, ctx: TransformContext) -> list[str]:
     body = _child_by_type(node, "statement_block")
 
-    range_parts = _extract_c_style_for_range(node)
+    range_parts = _extract_c_style_for_range(node, ctx)
     if range_parts:
         var_name, start_val, upper_bound = range_parts
         range_expr = (
@@ -332,7 +312,7 @@ def _transform_for_statement(node: Node, ctx: TransformContext) -> list[str]:
 
 
 def _transform_while_statement(node: Node, ctx: TransformContext) -> list[str]:
-    condition = _extract_condition_expression(node)
+    condition = _extract_condition_expression(node, ctx)
     body = _child_by_type(node, "statement_block")
     lines = [f"{ctx.indent}while {condition}:"]
     if body:
@@ -346,7 +326,7 @@ def _transform_while_statement(node: Node, ctx: TransformContext) -> list[str]:
 def _transform_return_statement(node: Node, ctx: TransformContext) -> list[str]:
     named = _named_children(node)
     return_value = named[0] if named else None
-    expr = transform_expression(return_value) if return_value else ""
+    expr = transform_expression(return_value, ctx) if return_value else ""
     return [f"{ctx.indent}return {expr}".rstrip()]
 
 
@@ -362,15 +342,15 @@ def _transform_expression_statement(node: Node, ctx: TransformContext) -> list[s
     if expr_node.type == "augmented_assignment_expression":
         return _transform_augmented_assignment(expr_node, ctx)
 
-    return [f"{ctx.indent}{transform_expression(expr_node)}"]
+    return [f"{ctx.indent}{transform_expression(expr_node, ctx)}"]
 
 
 def _transform_assignment_expression(node: Node, ctx: TransformContext) -> list[str]:
     named = _named_children(node)
     lhs_node = named[0] if named else None
     rhs_node = named[1] if len(named) >= MIN_ASSIGNMENT_OPERANDS else None
-    lhs = transform_expression(lhs_node) if lhs_node else "_"
-    rhs = transform_expression(rhs_node) if rhs_node else "None"
+    lhs = transform_expression(lhs_node, ctx) if lhs_node else "_"
+    rhs = transform_expression(rhs_node, ctx) if rhs_node else "None"
     return [f"{ctx.indent}{lhs} = {rhs}"]
 
 
@@ -378,8 +358,8 @@ def _transform_augmented_assignment(node: Node, ctx: TransformContext) -> list[s
     named = _named_children(node)
     lhs_node = named[0] if named else None
     rhs_node = named[1] if len(named) >= MIN_ASSIGNMENT_OPERANDS else None
-    lhs = transform_expression(lhs_node) if lhs_node else "_"
-    rhs = transform_expression(rhs_node) if rhs_node else "0"
+    lhs = transform_expression(lhs_node, ctx) if lhs_node else "_"
+    rhs = transform_expression(rhs_node, ctx) if rhs_node else "0"
 
     operator_node = next(
         (
@@ -394,7 +374,7 @@ def _transform_augmented_assignment(node: Node, ctx: TransformContext) -> list[s
 
 
 def _transform_switch_statement(node: Node, ctx: TransformContext) -> list[str]:
-    condition_expr = _extract_condition_expression(node)
+    condition_expr = _extract_condition_expression(node, ctx)
     switch_body = _child_by_type(node, "switch_body")
     if switch_body is None:
         return [f"{ctx.indent}pass"]
@@ -407,7 +387,7 @@ def _transform_switch_statement(node: Node, ctx: TransformContext) -> list[str]:
         case_value_nodes = [
             c for c in case_node.children if c.is_named and c.type != "break_statement"
         ]
-        case_value = transform_expression(case_value_nodes[0]) if case_value_nodes else "None"
+        case_value = transform_expression(case_value_nodes[0], ctx) if case_value_nodes else "None"
         keyword = "if" if idx == 0 else "elif"
         lines.append(f"{ctx.indent}{keyword} {condition_expr} == {case_value}:")
 

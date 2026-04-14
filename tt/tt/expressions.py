@@ -24,11 +24,25 @@ _MIN_ARGS_FOR_BINARY_FUNC = 2
 _TERNARY_CHILD_COUNT = 3
 
 
+INDENT_UNIT: str = "    "
+
+
 @dataclass(frozen=True)
 class TransformContext:
     import_map: dict[str, object]
     indent_level: int = 0
     scope_vars: frozenset[str] = field(default_factory=frozenset[str])
+
+    @property
+    def indent(self) -> str:
+        return INDENT_UNIT * self.indent_level
+
+    def indented(self) -> TransformContext:
+        return TransformContext(
+            import_map=self.import_map,
+            indent_level=self.indent_level + 1,
+            scope_vars=self.scope_vars,
+        )
 
 
 _BIGJS_BINARY_METHODS: dict[str, str] = {
